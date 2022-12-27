@@ -14,6 +14,8 @@
 #include <linux/videodev2.h>
 #include <opencv2/core/core.hpp>
 #include "opencv2/opencv.hpp"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/imgproc/imgproc_c.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <libv4l2.h>
 
@@ -22,9 +24,13 @@
 #include "v4l2_opencv.h"
 
 #define DEFAULT_V4L_QLEN 1 /* Queue length */
+//#define DEFAULT_CAM_FPS 30 /* 30 FPS */
 #define DEFAULT_CAM_FPS 30 /* 30 FPS */
-#define DEFAULT_FRAME_WIDTH 640 
+#define DEFAULT_FRAME_WIDTH 640
 #define DEFAULT_FRAME_HEIGHT 480
+
+//#define DEFAULT_FRAME_WIDTH 640
+//#define DEFAULT_FRAME_HEIGHT 480
 
 //#define DEBUG
 //#define BGR24
@@ -71,7 +77,7 @@ extern "C" {
     /* Convert cv::Mat to darknet image */
     image matImg_to_image(cv::Mat m)
     {
-        IplImage ipl = m;
+        IplImage ipl = cvIplImage(m);
         image im = iplImg_to_image(&ipl);
         rgbgr_image(im);
         return im;

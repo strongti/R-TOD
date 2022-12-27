@@ -9,6 +9,8 @@
 #include "image.h"
 #include "rtod.h"
 #include "darknet.h"
+#include "option_list.h"
+#include "dark_cuda.h"
 
 #ifdef WIN32
 #include <time.h>
@@ -44,6 +46,11 @@ extern int demo_index = 0;
 extern int letter_box = 0;
 extern int fetch_offset = 0; // zero slack
 
+
+extern int classes;
+extern int top;
+extern int* indexes;
+
 extern double e_fetch_sum = 0;
 extern double b_fetch_sum = 0;
 extern double d_fetch_sum = 0;
@@ -59,9 +66,15 @@ extern double fps_sum = 0;
 extern double cycle_time_sum = 0;
 extern double inter_frame_gap_sum = 0;
 extern double num_object_sum = 0;
-extern double trace_data_sum = 0;
+extern double transfer_delay_sum = 0;
+
+extern float* predictions[NFRAMES];
+extern float* prediction = 0;
 
 int *fd_handler = NULL;
+int c = 0;
+
+layer l;
 
 #ifndef ZERO_SLACK
 int contention_free = 1;
@@ -76,15 +89,11 @@ int contention_free = 0;
 #endif
 
 /* Save result in csv*/
-int write_result(void)
+int write_result(char *file_path)
 {
     static int exist=0;
     FILE *fp;
-    char file_path[256] = "";
     int tick = 0;
-
-    strcat(file_path, MEASUREMENT_PATH);
-    strcat(file_path, MEASUREMENT_FILE);
 
     fp=fopen(file_path,"w+");
 
@@ -115,10 +124,9 @@ int write_result(void)
     }
     else printf("\nWrite output in %s\n", file_path); 
 
-    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "e_fetch", "b_fetch", "d_fetch",
+    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "e_fetch", "b_fetch", "d_fetch",
             "e_infer", "b_infer", "d_infer", "e_disp", "b_disp", "d_disp",
-            "slack", "e2e_delay", "fps", "c_sys", "IFG", "n_obj");
-
+            "slack", "e2e_delay", "fps", "c_sys", "d_tran", "IFG", "n_obj");
     for(int i=0;i<OBJ_DET_CYCLE_IDX;i++)
     {
         e_fetch_sum += e_fetch_array[i];
@@ -134,12 +142,13 @@ int write_result(void)
         e2e_delay_sum += e2e_delay[i];
         fps_sum += fps_array[i];
         cycle_time_sum += cycle_time_array[i];
+	    transfer_delay_sum += transfer_delay_array[i];
         inter_frame_gap_sum += (double)inter_frame_gap_array[i];
         num_object_sum += (double)num_object_array[i];
 
-        fprintf(fp, "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n", e_fetch_array[i], b_fetch_array[i],d_fetch_array[i], 
+        fprintf(fp, "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n", e_fetch_array[i], b_fetch_array[i],d_fetch_array[i], 
                 e_infer_cpu_array[i], e_infer_gpu_array[i], d_infer_array[i], e_disp_array[i], b_disp_array[i], d_disp_array[i], 
-                slack[i], e2e_delay[i], fps_array[i], cycle_time_array[i], inter_frame_gap_array[i], num_object_array[i]);
+                slack[i], e2e_delay[i], fps_array[i], cycle_time_array[i], transfer_delay_array[i], inter_frame_gap_array[i], num_object_array[i]);
     }
     fclose(fp);
 
@@ -171,6 +180,7 @@ int get_fetch_offset(void)
 
         printf("Calculated fetch offset: %d ms\n"
                 " Enter the fetch offset (ms): ", offset);
+	//if offset = 0 -> ondemand
 
         if (-1 == scanf("%d", &fetch_offset))
         {
@@ -205,7 +215,20 @@ void push_data(void)
 
     fps_array[cnt - CYCLE_OFFSET] = fps;
     cycle_time_array[cnt - CYCLE_OFFSET] = 1000./fps;
+
+#ifdef V4L2
     e2e_delay[cnt - CYCLE_OFFSET] = end_disp - frame[display_index].frame_timestamp;
+#else
+    e2e_delay[cnt - CYCLE_OFFSET] = end_disp - start_loop[display_index];
+#endif
+    
+    
+    printf("end_disp : %f \n", end_disp);  
+#ifdef V4L2
+    printf("timestamp : %f \n", frame[display_index].frame_timestamp);
+#else
+    printf("start loop : %f \n", start_loop[display_index]);  
+#endif    
     e_disp_array[cnt - CYCLE_OFFSET] = d_disp - b_disp;
     b_disp_array[cnt - CYCLE_OFFSET] = b_disp;
     d_disp_array[cnt - CYCLE_OFFSET] = d_disp;
@@ -281,6 +304,7 @@ int check_on_demand(void)
 
 void *rtod_fetch_thread(void *ptr)
 {
+
     start_fetch = get_time_in_ms();
 
     usleep(fetch_offset * 1000);
@@ -298,6 +322,8 @@ void *rtod_fetch_thread(void *ptr)
         letterbox_image_into(frame[buff_index].frame, net.w, net.h, frame[buff_index].resize_frame);
         //frame[buff_index].resize_frame = letterbox_image(frame[buff_index].frame, net.w, net.h);
         //show_image_cv(frame[buff_index].resize_frame,"im");
+
+        //printf("w : %d, h : %d \n", net.w, net.h);
 
         if(!frame[buff_index].resize_frame.data){
             printf("Stream closed.\n");
@@ -321,8 +347,7 @@ void *rtod_fetch_thread(void *ptr)
     image_waiting_time = frame[buff_index].frame_timestamp - start_fetch;
     image_waiting_time -= fetch_offset;
 
-    if(ondemand) transfer_delay = frame[buff_index].select - image_waiting_time;
-    else transfer_delay = .0; 
+    
 
     inter_frame_gap = GET_IFG(frame[buff_index].frame_sequence, frame_sequence_tmp);
 
@@ -331,40 +356,55 @@ void *rtod_fetch_thread(void *ptr)
         b_fetch = frame[buff_index].select;
         e_fetch = d_fetch - b_fetch - fetch_offset;
     }
+
+    transfer_delay = frame[buff_index].select - image_waiting_time ;
+
     return 0;
 }
 
 void *rtod_inference_thread(void *ptr)
 {
-    start_infer = get_time_in_ms();
 
-    layer l = net.layers[net.n-1];
+    start_infer = get_time_in_ms();
+    
+    //layer l = net.layers[net.n-1];
 #ifdef V4L2
     float *X = frame[detect_index].resize_frame.data;
 #else
     float *X = det_s.data;
 #endif
+
     float *prediction = network_predict(net, X);
-
+    
     double e_i_cpu = get_time_in_ms();
+    //printf("%d", l.output); //0
 
+#ifdef DNN
     memcpy(predictions[demo_index], prediction, l.outputs*sizeof(float));
+    
     mean_arrays(predictions, NFRAMES, l.outputs, avg);
     l.output = avg;
-
-    //cv_images[demo_index] = det_img; /* Detection image bug */
-    //det_img = cv_images[(demo_index + NFRAMES / 2 + 1) % NFRAMES]; /* Detection image bug */
+#else
+    //printf("hi================\n");
+    if(net.hierarchy) hierarchy_predictions(prediction, net.outputs, net.hierarchy, 1);
+    top_predictions(net, top, indexes);
+#endif
+    cv_images[demo_index] = det_img; /* Detection image bug */
+    det_img = cv_images[(demo_index + NFRAMES / 2 + 1) % NFRAMES]; /* Detection image bug */
 
     demo_index = (demo_index + 1) % NFRAMES;
 
 #ifdef V4L2
     dets = get_network_boxes(&net, net.w, net.h, demo_thresh, demo_thresh, 0, 1, &nboxes, 0); // resized
+    printf("oboxes = %d", nboxes);
 #else
     if (letter_box)
         dets = get_network_boxes(&net, get_width_mat(in_img), get_height_mat(in_img), demo_thresh, demo_thresh, 0, 1, &nboxes, 1); // letter box
     else
         dets = get_network_boxes(&net, net.w, net.h, demo_thresh, demo_thresh, 0, 1, &nboxes, 0); // resized
 #endif
+
+
     end_infer = get_time_in_ms();
 
     d_infer = end_infer - start_infer;
@@ -375,7 +415,11 @@ void *rtod_inference_thread(void *ptr)
 #ifdef V4L2
 void *rtod_display_thread(void *ptr)
 {
+#ifdef DNN
     int c = show_image_cv(frame[display_index].frame, "Demo");
+#else
+    int c = show_image_cv(frame[display_index].frame, "Classifier Demo");
+#endif
 
     if (c == 27 || c == 1048603) // ESC - exit (OpenCV 2.x / 3.x)
     {
@@ -386,7 +430,7 @@ void *rtod_display_thread(void *ptr)
 }
 #endif
 
-void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int cam_index, const char *filename, char **names, int classes,
+void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hier_thresh, int cam_index, const char *filename, 
         int frame_skip, char *prefix, char *out_filename, int mjpeg_port, int json_port, int dont_show, int ext_output, int letter_box_in, int time_limit_sec, char *http_post_host,
         int benchmark, int benchmark_layers, int w, int h, int cam_fps)
 {
@@ -395,37 +439,49 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     //skip = frame_skip;
     image **alphabet = load_alphabet();
     int delay = frame_skip;
-    demo_names = names;
     demo_alphabet = alphabet;
-    demo_classes = classes;
     demo_thresh = thresh;
     demo_ext_output = ext_output;
     demo_json_port = json_port;
-    printf("Demo\n");
-    net = parse_network_cfg_custom(cfgfile, 1, 1);    // set batch=1
-    if(weightfile){
-        load_weights(&net, weightfile);
-    }
-    net.benchmark_layers = benchmark_layers;
-    fuse_conv_batchnorm(net);
-    calculate_binary_weights(net);
-    srand(2222222);
 
 	int img_w = w;
 	int img_h = h;
 	int cam_frame_rate= cam_fps;
     char *pipeline = NULL;
+    char *PIPELINE = NULL;
 #if (defined ZERO_SLACK & defined CONTENTION_FREE)
+    pipeline="V";
+    PIPELINE = "Vanilla";
     fprintf(stderr, "ERROR: Set either ZERO_SLACK or CONTENTION_FREE in Makefile\n");
     exit(0);
 #elif (defined ZERO_SLACK)
-    pipeline = "ZERO-SLACK";
+    pipeline = "ZS";
+    PIPELINE = "ZERO_SLACK";
 #elif (defined CONTENTION_FREE) 
-    pipeline = "CONTENTION-FREE";
+    pipeline = "CF";
+    PIPELINE = "CONTENTION_FREE";
+#elif (defined NEW_ZERO_SLACK)
+    pipeline = "NZS";
+    PIPELINE = "NEW_ZERO_SLACK";
 #else
     fprintf(stderr, "ERROR: Set either ZERO_SLACK or CONTENTION_FREE in Makefile\n");
     exit(0);
 #endif
+
+    //define measurement file name    
+    char file_path[256];
+    
+    //date
+    struct tm* t;
+    time_t base = time(NULL);
+    t = localtime(&base);
+    
+    //network name
+    char* network = malloc(strlen(cfgfile));;
+    strncpy(network, cfgfile + 4, (strlen(cfgfile)-8));
+    
+    sprintf(file_path, "measure/22%d%d_%s_%s.csv", t->tm_mon+1, t->tm_mday, network, pipeline);
+    
     if(filename){
         printf("video file: %s\n", filename);
         cap = get_capture_video_stream(filename);
@@ -441,7 +497,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
         fd_handler = open_device(cam_dev, cam_frame_rate, img_w, img_h);
         if(fd_handler ==  NULL)
         {
-            error("Couldn't connect to webcam.\n");
+            perror("Couldn't connect to webcam.\n");
         }
 #else
         cap = get_capture_webcam_with_prop(cam_index, img_w, img_h, cam_frame_rate);
@@ -449,14 +505,35 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 #ifdef WIN32
             printf("Check that you have copied file opencv_ffmpeg340_64.dll to the same directory where is darknet.exe \n");
 #endif
-            error("Couldn't connect to webcam.\n");
+            perror("Couldn't connect to webcam.\n");
         }
 #endif
     }
 
-    layer l = net.layers[net.n-1];
     int j;
+    
+#ifdef DNN
+    printf("Demo\n");
+    list *options = read_data_cfg(datacfg);
+    int classes = option_find_int(options, "classes", 20);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    char **names = get_labels(name_list);
+    demo_names = names;
+    demo_classes = classes;
 
+    net = parse_network_cfg_custom(cfgfile, 1, 1);    // set batch=1
+    if(weightfile){
+        load_weights(&net, weightfile);
+    }
+    
+    net.benchmark_layers = benchmark_layers;
+    fuse_conv_batchnorm(net);
+    calculate_binary_weights(net);
+    srand(2222222);
+
+    //layer l = net.layers[net.n-1];
+     l = net.layers[net.n-1];
+    //int j;
     avg = (float *) calloc(l.outputs, sizeof(float));
     for(j = 0; j < NFRAMES; ++j) predictions[j] = (float *) calloc(l.outputs, sizeof(float));
 
@@ -466,6 +543,36 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
         exit(0);
     }
     flag_exit = 0;
+#else
+    printf("Classifier Demo\n");
+    net = parse_network_cfg_custom(cfgfile, 1, 0);
+    if(weightfile){
+        load_weights(&net, weightfile);
+    }
+    net.benchmark_layers = benchmark_layers;
+    set_batch_network(&net, 1);
+    list *options = read_data_cfg(datacfg);
+
+    //layer l = net.layers[net.n-1];
+    l = net.layers[net.n-1];
+    fuse_conv_batchnorm(net);
+    calculate_binary_weights(net);
+
+    srand(2222222);
+
+    classes = option_find_int(options, "classes", 2);
+    //printf("%d=========================\n\n\n", l.output);
+    //printf("\n====%d====\n", l.classes); //0
+    top = option_find_int(options, "top", 1);
+    if (top > classes) top = classes;
+
+    char *name_list = option_find_str(options, "names", 0);
+    int **names = get_labels(name_list);
+
+    demo_names = names;
+    demo_classes = classes;
+    indexes = (int*)xcalloc(top, sizeof(int));
+#endif
 
     pthread_t fetch_thread;
     pthread_t inference_thread;
@@ -481,10 +588,9 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     printf("OBJECT DETECTOR INFORMATION:\n"
             "  Capture: \"On-demand capture\"\n"
             "  Pipeline architecture: \"%s\"\n",
-            pipeline);
-    printf("========================\n");
-
-    //printf("ondemand : %d\n", ondemand);
+            PIPELINE);
+    
+    printf("ondemand : %d\n", ondemand);
 
 #ifdef V4L2
 	if(-1 == capture_image(&frame[buff_index], *fd_handler))
@@ -521,7 +627,11 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     int count = 0;
     if(!prefix && !dont_show){
         int full_screen = 0;
+#ifdef DNN
         create_window_cv("Demo", full_screen, 1352, 1013);
+#else   
+        create_window_cv("Classifier Demo", full_screen, 512, 512);
+#endif
         //make_window("Demo", 1352, 1013, full_screen);
     }
 
@@ -562,55 +672,78 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 #elif (defined CONTENTION_FREE)
             display_index = (buff_index + 2) %3;
             detect_index = (buff_index) %3;
+#elif (defined NEW_ZERO_SLACK)
+	    display_index = (buff_index + 2) %3;
+	    detect_index = (buff_index + 2) %3;
 #else
-    fprintf(stderr, "ERROR: Set either ZERO_SLACK or CONTENTION_FREE in Makefile\n");
-    exit(0);
+    //fprintf(stderr, "ERROR: Set either ZERO_SLACK or CONTENTION_FREE or NEW_ZERO_SLACK in Makefile\n");
+    //exit(0);
 #endif
             const float nms = .45;    // 0.4F
             int local_nboxes = nboxes;
             detection *local_dets = dets;
 
             /* Fork fetch thread */
-            if (!benchmark) if (pthread_create(&fetch_thread, 0, rtod_fetch_thread, 0)) error("Thread creation failed");
+            if (!benchmark) if (pthread_create(&fetch_thread, 0, rtod_fetch_thread, 0)) perror("Thread creation failed");
 
-#ifdef ZERO_SLACK
+#if defined(ZERO_SLACK) || defined(NEW_ZERO_SLACK) 
             /* Fork Inference thread */
-            if(pthread_create(&inference_thread, 0, rtod_inference_thread, 0)) error("Thread creation failed");
+            if(pthread_create(&inference_thread, 0, rtod_inference_thread, 0)) perror("Thread creation failed");
 #endif
-            /* display thread */
 
+#ifdef NEW_ZERO_SLACK
+
+            /* Join Inference thread */
+            pthread_join(inference_thread, 0);
+	    printf("=======end inference=====");
+#endif
+	    
+	    /* display thread */
+	    printf("start display");
             printf("\033[2J");
             printf("\033[1;1H");
 #ifdef ZERO_SLACK
             if(measure) printf("Measuring...\n");
 #endif
+            printf("\nTrafnsferdelay:%.1f\n", transfer_delay);
             printf("\nFPS:%.1f \t AVG_FPS:%.1f\n", fps, avg_fps);
             printf("Objects:\n\n");
 
             double start_disp = get_time_in_ms();
 
+            // nms = 0.45
             if (nms) {
-                if (l.nms_kind == DEFAULT_NMS) do_nms_sort(local_dets, local_nboxes, l.classes, nms);
-                else diounms_sort(local_dets, local_nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
-            }
-
+                if (l.nms_kind == DEFAULT_NMS){ // other dnn
+                    do_nms_sort(local_dets, local_nboxes, classes, nms);
+                }
+                else { //yolo
+                    diounms_sort(local_dets, local_nboxes, classes, nms, l.nms_kind, l.beta_nms);
+                }}
 #ifdef V4L2
-            if (!benchmark) draw_detections_v3(frame[display_index].frame, local_dets, local_nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes, demo_ext_output);
+
+            if (!benchmark) {
+                draw_detections_v3(frame[display_index].frame, local_dets, local_nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes, demo_ext_output);
+
+            }
             free_detections(local_dets, local_nboxes);
 
             draw_bbox_time = get_time_in_ms() - start_disp;
 
             /* Image display */
             rtod_display_thread(0);
+
 #else
             /* original display thread */
 
             ++frame_id;
             if (demo_json_port > 0) {
                 int timeout = 400000;
-                send_json(local_dets, local_nboxes, l.classes, demo_names, frame_id, demo_json_port, timeout);
+                printf("\n================\n");
+                //send_json(local_dets, local_nboxes, l.classes, demo_names, frame_id, demo_json_port, timeout);
+                send_json(local_dets, local_nboxes, classes, demo_names, frame_id, demo_json_port, timeout);
             }
 
+            printf("\n================\n");
             //char *http_post_server = "webhook.site/898bbd9b-0ddd-49cf-b81d-1f56be98d870";
             if (http_post_host && !send_http_post_once) {
                 int timeout = 3;            // 3 seconds
@@ -628,12 +761,17 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 
             free_detections(local_dets, local_nboxes);
 
+            //printf("\n================\n");
             if(!prefix){
                 if (!dont_show) {
+#ifdef DNN
                     show_image_mat(show_img, "Demo");
-
+#else
+                    show_image_mat(show_img, "Classifier Demo");
+#endif                    
                     waitkey_start = get_time_in_ms();
-                    int c = wait_key_cv(1);
+                    //int c = wait_key_cv(1);
+		            //cv::waitKey(1);
                     b_disp = get_time_in_ms() - waitkey_start;
 
                     if (c == 10) {
@@ -667,6 +805,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
                 write_frame_cv(output_video_writer, show_img);
                 printf("\n cvWriteFrame \n");
             }
+
 #endif
             /* display end */
 
@@ -674,7 +813,8 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 
             d_disp = end_disp - start_disp; 
 
-#ifdef ZERO_SLACK
+#ifdef ZERO_SLACK 
+
             /* Join Inference thread */
             pthread_join(inference_thread, 0);
 #endif
@@ -690,6 +830,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             det_s = in_s;
 
             rtod_inference_thread(0);
+            //printf("=========================\n");
 #endif
 
             if (time_limit_sec > 0 && (get_time_point() - start_time_lim)/1000000 > time_limit_sec) {
@@ -705,7 +846,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 #endif
                 show_img = det_img;
             }
-#ifdef ZERO_SLACK
+#if defined(ZERO_SLACK) || defined(NEW_ZERO_SLACK)
             det_img = in_img;
             det_s = in_s;
 #endif
@@ -755,7 +896,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
         /* Exit object detection cycle */
         if(cnt == ((OBJ_DET_CYCLE_IDX + CYCLE_OFFSET) - 1)) 
         {
-            if(-1 == write_result())
+            if(-1 == write_result(file_path))
             {
                 /* return error */
                 exit(0);
@@ -785,7 +926,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     printf("Avg disp execution time (ms) : %0.2f\n", e_disp_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg disp blocking time (ms) : %0.2f\n", b_disp_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg disp delay (ms) : %0.2f\n", d_disp_sum / OBJ_DET_CYCLE_IDX);
-    printf("Avg salck (ms) : %0.2f\n", slack_sum / OBJ_DET_CYCLE_IDX);
+    printf("Avg slack (ms) : %0.2f\n", slack_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg E2E delay (ms) : %0.2f\n", e2e_delay_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg cycle time (ms) : %0.2f\n", cycle_time_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg inter frame gap : %0.2f\n", inter_frame_gap_sum / OBJ_DET_CYCLE_IDX);
@@ -831,8 +972,9 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     free_network(net);
     //cudaProfilerStop();
 }
+ 
 #else
-void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int cam_index, const char *filename, char **names, int classes,
+void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hier_thresh, int cam_index, const char *filename, 
         int frame_skip, char *prefix, char *out_filename, int mjpeg_port, int json_port, int dont_show, int ext_output, int letter_box_in, int time_limit_sec, char *http_post_host,
         int benchmark, int benchmark_layers)
 {
