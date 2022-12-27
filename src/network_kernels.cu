@@ -686,7 +686,8 @@ float train_networks(network *nets, int n, data d, int interval)
 float *get_network_output_layer_gpu(network net, int i)
 {
     layer l = net.layers[i];
-    if(l.type != REGION && l.type != YOLO && (*net.cuda_graph_ready) == 0)
+    //if(l.type != REGION && l.type != YOLO && (*net.cuda_graph_ready) == 0)
+    if(l.type != REGION)
     {
         extern double e_infer_gpu;
         cuda_pull_array(l.output_gpu, l.output, l.outputs*l.batch);

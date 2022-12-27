@@ -929,6 +929,7 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
     printf("Avg slack (ms) : %0.2f\n", slack_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg E2E delay (ms) : %0.2f\n", e2e_delay_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg cycle time (ms) : %0.2f\n", cycle_time_sum / OBJ_DET_CYCLE_IDX);
+    printf("Avg transfer delay (ms) : %0.2f\n", transfer_delay_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg inter frame gap : %0.2f\n", inter_frame_gap_sum / OBJ_DET_CYCLE_IDX);
     printf("Avg number of object : %0.2f\n", num_object_sum / OBJ_DET_CYCLE_IDX);
     printf("=====================================\n");
