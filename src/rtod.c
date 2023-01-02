@@ -67,6 +67,7 @@ extern double cycle_time_sum = 0;
 extern double inter_frame_gap_sum = 0;
 extern double num_object_sum = 0;
 extern double transfer_delay_sum = 0;
+extern double image_waiting_sum = 0;
 
 extern float* predictions[NFRAMES];
 extern float* prediction = 0;
@@ -124,9 +125,9 @@ int write_result(char *file_path)
     }
     else printf("\nWrite output in %s\n", file_path); 
 
-    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "e_fetch", "b_fetch", "d_fetch",
+    fprintf(fp, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s\n", "e_fetch", "b_fetch", "d_fetch",
             "e_infer", "b_infer", "d_infer", "e_disp", "b_disp", "d_disp",
-            "slack", "e2e_delay", "fps", "c_sys", "d_tran", "IFG", "n_obj");
+            "slack", "e2e_delay", "fps", "c_sys", "d_tran", "IWT", "IFG", "n_obj");
     for(int i=0;i<OBJ_DET_CYCLE_IDX;i++)
     {
         e_fetch_sum += e_fetch_array[i];
@@ -143,6 +144,7 @@ int write_result(char *file_path)
         fps_sum += fps_array[i];
         cycle_time_sum += cycle_time_array[i];
 	    transfer_delay_sum += transfer_delay_array[i];
+        image_waiting_sum += image_waiting_array[i];
         inter_frame_gap_sum += (double)inter_frame_gap_array[i];
         num_object_sum += (double)num_object_array[i];
 
@@ -208,6 +210,7 @@ void push_data(void)
     d_fetch_array[cnt - CYCLE_OFFSET] = d_fetch;
     inter_frame_gap_array[cnt - CYCLE_OFFSET] = inter_frame_gap;
     transfer_delay_array[cnt - CYCLE_OFFSET] = transfer_delay;
+    image_waiting_array[cnt - CYCLE_OFFSET] = image_waiting_time;
 
     e_infer_cpu_array[cnt - CYCLE_OFFSET] = d_infer - e_infer_gpu;
     e_infer_gpu_array[cnt - CYCLE_OFFSET] = e_infer_gpu;
@@ -358,6 +361,8 @@ void *rtod_fetch_thread(void *ptr)
     }
 
     transfer_delay = frame[buff_index].select - image_waiting_time ;
+    printf("transfer_delay : %f", transfer_delay);
+    printf("image_waiting_time : %f", image_waiting_time);
 
     return 0;
 }

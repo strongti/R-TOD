@@ -50,6 +50,7 @@ int inter_frame_gap_array[OBJ_DET_CYCLE_IDX];
 double cycle_time_array[OBJ_DET_CYCLE_IDX];
 int num_object_array[OBJ_DET_CYCLE_IDX];
 double transfer_delay_array[OBJ_DET_CYCLE_IDX];
+double image_waiting_array[OBJ_DET_CYCLE_IDX];
 
 double e_fetch_sum;
 double b_fetch_sum;
@@ -68,6 +69,7 @@ double inter_frame_gap_sum;
 double num_object_sum;
 double trace_data_sum;
 double transfer_delay_sum;
+double image_waiting_sum;
 
 #ifdef ZERO_SLACK
 double s_min;
