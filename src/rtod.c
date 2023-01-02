@@ -361,9 +361,7 @@ void *rtod_fetch_thread(void *ptr)
     }
 
     transfer_delay = frame[buff_index].select - image_waiting_time ;
-    printf("transfer_delay : %f", transfer_delay);
-    printf("image_waiting_time : %f", image_waiting_time);
-
+    
     return 0;
 }
 
@@ -710,7 +708,9 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
 #ifdef ZERO_SLACK
             if(measure) printf("Measuring...\n");
 #endif
+            printf("\nB_fetch:%.1f\n", b_fetch);
             printf("\nTrafnsferdelay:%.1f\n", transfer_delay);
+            printf("\nImage Waiting Time:%.1f", image_waiting_time);
             printf("\nFPS:%.1f \t AVG_FPS:%.1f\n", fps, avg_fps);
             printf("Objects:\n\n");
 
