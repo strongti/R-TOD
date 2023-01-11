@@ -219,19 +219,14 @@ void push_data(void)
     fps_array[cnt - CYCLE_OFFSET] = fps;
     cycle_time_array[cnt - CYCLE_OFFSET] = 1000./fps;
 
-#ifdef V4L2
+//V4L2
     e2e_delay[cnt - CYCLE_OFFSET] = end_disp - frame[display_index].frame_timestamp;
-#else
-    e2e_delay[cnt - CYCLE_OFFSET] = end_disp - start_loop[display_index];
-#endif
     
     
     printf("end_disp : %f \n", end_disp);  
-#ifdef V4L2
+//V4L2
     printf("timestamp : %f \n", frame[display_index].frame_timestamp);
-#else
-    printf("start loop : %f \n", start_loop[display_index]);  
-#endif    
+ 
     e_disp_array[cnt - CYCLE_OFFSET] = d_disp - b_disp;
     b_disp_array[cnt - CYCLE_OFFSET] = b_disp;
     d_disp_array[cnt - CYCLE_OFFSET] = d_disp;
@@ -262,11 +257,8 @@ int check_on_demand(void)
     static int size;
     int on_demand;
 
-#if (defined V4L2)
+//V4L2
     env_var = getenv("V4L2_QLEN");
-#else
-    env_var = getenv("OPENCV_QLEN");
-#endif
 
     if(env_var != NULL){
         env_var_int = atoi(env_var);
@@ -316,7 +308,7 @@ void *rtod_fetch_thread(void *ptr)
     if(letter_box)
         in_s = get_image_from_stream_letterbox(cap, net.w, net.h, net.c, &in_img, dont_close_stream);
     else{
-#ifdef V4L2
+//V4L2
 		if(-1 == capture_image(&frame[buff_index], *fd_handler))
 		{
 			perror("Fail to capture image");
@@ -334,16 +326,6 @@ void *rtod_fetch_thread(void *ptr)
             //exit(EXIT_FAILURE);
             return 0;
         }
-#else
-        in_s = get_image_from_stream_resize_with_timestamp(cap, net.w, net.h, net.c, &in_img, dont_close_stream, &frame[buff_index]);
-        //        in_s = get_image_from_v4l2(net.w, net.h, net.c, &in_img, dont_close_stream, &frame[buff_index]);
-        if(!in_s.data){
-            printf("Stream closed.\n");
-            flag_exit = 1;
-            //exit(EXIT_FAILURE);
-            return 0;
-        }
-#endif
     }
     end_fetch = get_time_in_ms();
 
@@ -371,11 +353,8 @@ void *rtod_inference_thread(void *ptr)
     start_infer = get_time_in_ms();
     
     //layer l = net.layers[net.n-1];
-#ifdef V4L2
+//V4L2
     float *X = frame[detect_index].resize_frame.data;
-#else
-    float *X = det_s.data;
-#endif
 
     float *prediction = network_predict(net, X);
     
@@ -397,15 +376,9 @@ void *rtod_inference_thread(void *ptr)
 
     demo_index = (demo_index + 1) % NFRAMES;
 
-#ifdef V4L2
+//V4L2
     dets = get_network_boxes(&net, net.w, net.h, demo_thresh, demo_thresh, 0, 1, &nboxes, 0); // resized
     printf("oboxes = %d", nboxes);
-#else
-    if (letter_box)
-        dets = get_network_boxes(&net, get_width_mat(in_img), get_height_mat(in_img), demo_thresh, demo_thresh, 0, 1, &nboxes, 1); // letter box
-    else
-        dets = get_network_boxes(&net, net.w, net.h, demo_thresh, demo_thresh, 0, 1, &nboxes, 0); // resized
-#endif
 
 
     end_infer = get_time_in_ms();
@@ -415,7 +388,7 @@ void *rtod_inference_thread(void *ptr)
     return 0;
 }
 
-#ifdef V4L2
+//V4L2
 void *rtod_display_thread(void *ptr)
 {
 #ifdef DNN
@@ -431,7 +404,7 @@ void *rtod_display_thread(void *ptr)
 
     return 0;
 }
-#endif
+
 
 void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hier_thresh, int cam_index, const char *filename, 
         int frame_skip, char *prefix, char *out_filename, int mjpeg_port, int json_port, int dont_show, int ext_output, int letter_box_in, int time_limit_sec, char *http_post_host,
@@ -490,7 +463,7 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
         cap = get_capture_video_stream(filename);
     }else{
         printf("Webcam index: %d\n", cam_index);
-#ifdef V4L2
+//V4L2
         char cam_dev[256] = "/dev/video";
         char index[256];
         sprintf(index, "%d", cam_index);
@@ -502,15 +475,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
         {
             perror("Couldn't connect to webcam.\n");
         }
-#else
-        cap = get_capture_webcam_with_prop(cam_index, img_w, img_h, cam_frame_rate);
-        if (!cap) {
-#ifdef WIN32
-            printf("Check that you have copied file opencv_ffmpeg340_64.dll to the same directory where is darknet.exe \n");
-#endif
-            perror("Couldn't connect to webcam.\n");
-        }
-#endif
     }
 
     int j;
@@ -580,14 +544,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
     pthread_t fetch_thread;
     pthread_t inference_thread;
 
-#ifndef V4L2
-    ondemand = check_on_demand();
-
-    if(ondemand != 1) { 
-        fprintf(stderr, "ERROR : R-TOD needs on-demand capture.\n");
-        exit(0);
-    }
-#endif
     printf("OBJECT DETECTOR INFORMATION:\n"
             "  Capture: \"On-demand capture\"\n"
             "  Pipeline architecture: \"%s\"\n",
@@ -595,7 +551,7 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
     
     printf("ondemand : %d\n", ondemand);
 
-#ifdef V4L2
+//V4L2
 	if(-1 == capture_image(&frame[buff_index], *fd_handler))
 	{
 		perror("Fail to capture image");
@@ -608,24 +564,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
 
     frame[2].frame = frame[0].frame;
     frame[2].resize_frame = letterbox_image(frame[0].frame, net.w, net.h);
-#else
-    rtod_fetch_thread(0);
-    det_img = in_img;
-    det_s = in_s;
-
-    rtod_fetch_thread(0);
-    rtod_inference_thread(0);
-    det_img = in_img;
-    det_s = in_s;
-
-    for (j = 0; j < NFRAMES / 2; ++j) {
-        free_detections(dets, nboxes);
-        rtod_fetch_thread(0);
-        rtod_inference_thread(0);
-        det_img = in_img;
-        det_s = in_s;
-    }
-#endif
 
     int count = 0;
     if(!prefix && !dont_show){
@@ -643,18 +581,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
     {
         int src_fps = 25;
         src_fps = get_stream_fps_cpp_cv(cap);
-#ifndef V4L2
-        output_video_writer =
-            create_video_writer(out_filename, 'D', 'I', 'V', 'X', src_fps, get_width_mat(det_img), get_height_mat(det_img), 1);
-#endif
-
-        //'H', '2', '6', '4'
-        //'D', 'I', 'V', 'X'
-        //'M', 'J', 'P', 'G'
-        //'M', 'P', '4', 'V'
-        //'M', 'P', '4', '2'
-        //'X', 'V', 'I', 'D'
-        //'W', 'M', 'V', '2'
     }
 
     int send_http_post_once = 0;
@@ -724,7 +650,7 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
                 else { //yolo
                     diounms_sort(local_dets, local_nboxes, classes, nms, l.nms_kind, l.beta_nms);
                 }}
-#ifdef V4L2
+//V4L2
 
             if (!benchmark) {
                 draw_detections_v3(frame[display_index].frame, local_dets, local_nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes, demo_ext_output);
@@ -737,81 +663,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
             /* Image display */
             rtod_display_thread(0);
 
-#else
-            /* original display thread */
-
-            ++frame_id;
-            if (demo_json_port > 0) {
-                int timeout = 400000;
-                printf("\n================\n");
-                //send_json(local_dets, local_nboxes, l.classes, demo_names, frame_id, demo_json_port, timeout);
-                send_json(local_dets, local_nboxes, classes, demo_names, frame_id, demo_json_port, timeout);
-            }
-
-            printf("\n================\n");
-            //char *http_post_server = "webhook.site/898bbd9b-0ddd-49cf-b81d-1f56be98d870";
-            if (http_post_host && !send_http_post_once) {
-                int timeout = 3;            // 3 seconds
-                int http_post_port = 80;    // 443 https, 80 http
-                if (send_http_post_request(http_post_host, http_post_port, filename,
-                            local_dets, nboxes, classes, names, frame_id, ext_output, timeout))
-                {
-                    if (time_limit_sec > 0) send_http_post_once = 1;
-                }
-            }
-
-            if (!benchmark) draw_detections_cv_v3(show_img, local_dets, local_nboxes, demo_thresh, demo_names, demo_alphabet, demo_classes, demo_ext_output);
-
-            draw_bbox_time = get_time_in_ms() - start_disp;
-
-            free_detections(local_dets, local_nboxes);
-
-            //printf("\n================\n");
-            if(!prefix){
-                if (!dont_show) {
-#ifdef DNN
-                    show_image_mat(show_img, "Demo");
-#else
-                    show_image_mat(show_img, "Classifier Demo");
-#endif                    
-                    waitkey_start = get_time_in_ms();
-                    //int c = wait_key_cv(1);
-		            //cv::waitKey(1);
-                    b_disp = get_time_in_ms() - waitkey_start;
-
-                    if (c == 10) {
-                        if (frame_skip == 0) frame_skip = 60;
-                        else if (frame_skip == 4) frame_skip = 0;
-                        else if (frame_skip == 60) frame_skip = 4;
-                        else frame_skip = 0;
-                    }
-                    else if (c == 27 || c == 1048603) // ESC - exit (OpenCV 2.x / 3.x)
-                    {
-                        flag_exit = 1;
-                    }
-
-                }
-            }else{
-                char buff[256];
-                sprintf(buff, "%s_%08d.jpg", prefix, count);
-                if(show_img) save_cv_jpg(show_img, buff);
-            }
-
-            // if you run it with param -mjpeg_port 8090  then open URL in your web-browser: http://localhost:8090
-            if (mjpeg_port > 0 && show_img) {
-                int port = mjpeg_port;
-                int timeout = 400000;
-                int jpeg_quality = 40;    // 1 - 100
-                send_mjpeg(show_img, port, timeout, jpeg_quality);
-            }
-
-            // save video file
-            if (output_video_writer && show_img) {
-                write_frame_cv(output_video_writer, show_img);
-                printf("\n cvWriteFrame \n");
-            }
-
-#endif
             /* display end */
 
             end_disp = get_time_in_ms();
@@ -846,9 +697,6 @@ void rtod(char *datacfg, char *cfgfile, char *weightfile, float thresh, float hi
             if (flag_exit == 1) break;
 
             if(delay == 0){
-#ifndef V4L2
-                if(!benchmark) release_mat(&show_img);
-#endif
                 show_img = det_img;
             }
 #if defined(ZERO_SLACK) || defined(NEW_ZERO_SLACK)
