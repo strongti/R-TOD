@@ -136,7 +136,7 @@ image get_label_v3(image **characters, char *string, int size)
         label = n;
         ++string;
     }
-    image b = border_image(label, label.h*.05);
+    image b = border_image(label, label.h*.25);
     free_image(label);
     return b;
 }
@@ -153,25 +153,6 @@ void draw_label(image a, int r, int c, image label, const float *rgb)
             for(k = 0; k < label.c; ++k){
                 float val = get_pixel(label, i, j, k);
                 set_pixel(a, i+c, j+r, k, rgb[k] * val);
-            }
-        }
-    }
-}
-
-void draw_weighted_label(image a, int r, int c, image label, const float *rgb, const float alpha)
-{
-    int w = label.w;
-    int h = label.h;
-    if (r - h >= 0) r = r - h;
-
-    int i, j, k;
-    for (j = 0; j < h && j + r < a.h; ++j) {
-        for (i = 0; i < w && i + c < a.w; ++i) {
-            for (k = 0; k < label.c; ++k) {
-                float val1 = get_pixel(label, i, j, k);
-                float val2 = get_pixel(a, i + c, j + r, k);
-                float val_dst = val1 * rgb[k] * alpha + val2 * (1 - alpha);
-                set_pixel(a, i + c, j + r, k, val_dst);
             }
         }
     }
@@ -333,17 +314,16 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 {
     static int frame_id = 0;
     frame_id++;
-    extern int num_object;
+	extern int num_object;
+
     int selected_detections_num;
     detection_with_class* selected_detections = get_actual_detections(dets, num, thresh, &selected_detections_num, names);
 
     // text output
     qsort(selected_detections, selected_detections_num, sizeof(*selected_detections), compare_by_lefts);
     int i;
-    num_object = selected_detections_num;
-    printf("selected ~~ : %d \n", num);
-    for (i = 0; i < selected_detections_num; ++i) {
-        //printf("==================hidraw=================\n");
+	num_object = selected_detections_num;
+	for (i = 0; i < selected_detections_num; ++i) {
         const int best_class = selected_detections[i].best_class;
         printf("%s: %.0f%%", names[best_class],    selected_detections[i].det.prob[best_class] * 100);
         if (ext_output)
@@ -373,8 +353,17 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
 
     // image output
     qsort(selected_detections, selected_detections_num, sizeof(*selected_detections), compare_by_probs);
-    for (i = 0; i < selected_detections_num; ++i) {
-            int width = im.h * .002;
+
+#ifdef DUMMY_OBJECT
+    /* dummy object */
+
+    int loop_cnt;
+
+    for (loop_cnt = 0; loop_cnt < NUM_DUMMY; loop_cnt++)
+    {
+#endif
+        for (i = 0; i < selected_detections_num; ++i) {
+            int width = im.h * .006;
             if (width < 1)
                 width = 1;
 
@@ -447,9 +436,6 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
             if (alphabet) {
                 char labelstr[4096] = { 0 };
                 strcat(labelstr, names[selected_detections[i].best_class]);
-                char prob_str[10];
-                sprintf(prob_str, ": %.2f", selected_detections[i].det.prob[selected_detections[i].best_class]);
-                strcat(labelstr, prob_str);
                 int j;
                 for (j = 0; j < classes; ++j) {
                     if (selected_detections[i].det.prob[j] > thresh && j != selected_detections[i].best_class) {
@@ -457,9 +443,8 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
                         strcat(labelstr, names[j]);
                     }
                 }
-                image label = get_label_v3(alphabet, labelstr, (im.h*.02));
-                //draw_label(im, top + width, left, label, rgb);
-                draw_weighted_label(im, top + width, left, label, rgb, 0.7);
+                image label = get_label_v3(alphabet, labelstr, (im.h*.03));
+                draw_label(im, top + width, left, label, rgb);
                 free_image(label);
             }
             if (selected_detections[i].det.mask) {
@@ -1446,7 +1431,7 @@ void make_image_red(image im)
     }
 }
 
-image make_attention_image(int img_size, float *original_delta_cpu, float *original_input_cpu, int w, int h, int c, float alpha)
+image make_attention_image(int img_size, float *original_delta_cpu, float *original_input_cpu, int w, int h, int c)
 {
     image attention_img;
     attention_img.w = w;
@@ -1474,7 +1459,7 @@ image make_attention_image(int img_size, float *original_delta_cpu, float *origi
     image resized = resize_image(attention_img, w / 4, h / 4);
     attention_img = resize_image(resized, w, h);
     free_image(resized);
-    for (k = 0; k < img_size; ++k) attention_img.data[k] = attention_img.data[k]*alpha + (1-alpha)*original_input_cpu[k];
+    for (k = 0; k < img_size; ++k) attention_img.data[k] += original_input_cpu[k];
 
     //normalize_image(attention_img);
     //show_image(attention_img, "delta");

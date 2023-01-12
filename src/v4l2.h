@@ -11,6 +11,7 @@ static int xioctl(int fd, int request, void *arg);
 int print_caps(int fd, int w, int h);
 int init_mmap(int fd);
 int capture_image(struct frame_data *f, int fd);
+int convert_image(struct frame_data *f);
 int set_framerate(int fd, int fps);
 
 #endif
