@@ -279,27 +279,6 @@ int check_on_demand(void)
     return on_demand;
 }
 
-struct frame_data *f;
-void *rtod_capture_thread(void *ptr)
-{
-    while(1)
-    {
-#ifdef V4L2
-	//if(-1 == capture_image(&f, *fd_handler))
-	if(-1 == capture_image(&frame[buff_index], *fd_handler))
-	
-	{
-		perror("Fail to capture image");
-		exit(0);
-	}
-	//usleep(33.333*1000);
-	//printf("capture image =============");
-	sleep(50);
-    }
-#endif
-
-}
-
 void *rtod_fetch_thread(void *ptr)
 {
     start_fetch = get_time_in_ms();
@@ -311,12 +290,11 @@ void *rtod_fetch_thread(void *ptr)
         in_s = get_image_from_stream_letterbox(cap, net.w, net.h, net.c, &in_img, dont_close_stream);
     else{
 #ifdef V4L2
-	//frame[buff_index] = *f;
-	if(-1 == convert_image(&frame[buff_index]))
-	{
-		perror("Fail to convert image");
-		exit(0);
-	}
+		if(-1 == capture_image(&frame[buff_index], *fd_handler))
+		{
+			perror("Fail to capture image");
+			exit(0);
+		}
         letterbox_image_into(frame[buff_index].frame, net.w, net.h, frame[buff_index].resize_frame);
         //frame[buff_index].resize_frame = letterbox_image(frame[buff_index].frame, net.w, net.h);
         //show_image_cv(frame[buff_index].resize_frame,"im");
@@ -353,9 +331,6 @@ void *rtod_fetch_thread(void *ptr)
         b_fetch = frame[buff_index].select;
         e_fetch = d_fetch - b_fetch - fetch_offset;
     }
-
-    printf("image waiting time : %.1f \n", image_waiting_time);
-    printf("transfer_delay : %.1f \n", transfer_delay);
     return 0;
 }
 
@@ -492,7 +467,6 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
     }
     flag_exit = 0;
 
-    pthread_t capture_thread;
     pthread_t fetch_thread;
     pthread_t inference_thread;
 
@@ -516,11 +490,6 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 	if(-1 == capture_image(&frame[buff_index], *fd_handler))
 	{
 		perror("Fail to capture image");
-		exit(0);
-	}
-	if(-1 == convert_image(&frame[buff_index]))
-	{
-		perror("Fail to convert image");
 		exit(0);
 	}
     frame[0].resize_frame = letterbox_image(frame[0].frame, net.w, net.h);
@@ -600,8 +569,6 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             const float nms = .45;    // 0.4F
             int local_nboxes = nboxes;
             detection *local_dets = dets;
-            /* Fork Capture thread */
-    	    if(pthread_create(&capture_thread, 0, rtod_capture_thread, 0)) error("Thread creation failed");
 
             /* Fork fetch thread */
             if (!benchmark) if (pthread_create(&fetch_thread, 0, rtod_fetch_thread, 0)) error("Thread creation failed");

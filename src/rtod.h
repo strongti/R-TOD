@@ -148,7 +148,6 @@ int get_fetch_offset(void);
 int write_result(void);
 double get_time_in_ms(void);
 int check_on_demand(void);
-void *rtod_capture_thread(void *ptr);
 void *rtod_fetch_thread(void *ptr);
 void *rtod_inference_thread(void *ptr);
 void *rtod_display_thread(void *ptr);
