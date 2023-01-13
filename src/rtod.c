@@ -307,16 +307,16 @@ void *rtod_fetch_thread(void *ptr)
     usleep(fetch_offset * 1000);
 
     int dont_close_stream = 0;    // set 1 if your IP-camera periodically turns off and turns on video-stream
-    if(letter_box)
+    if(letter_box)/
         in_s = get_image_from_stream_letterbox(cap, net.w, net.h, net.c, &in_img, dont_close_stream);
     else{
 #ifdef V4L2
 	//frame[buff_index] = *f;
-	if(-1 == convert_image(&frame[buff_index]))
-	{
-		perror("Fail to convert image");
-		exit(0);
-	}
+	// if(-1 == convert_image(&frame[buff_index]))
+	// {
+	// 	perror("Fail to convert image");
+	// 	exit(0);
+	// }
         letterbox_image_into(frame[buff_index].frame, net.w, net.h, frame[buff_index].resize_frame);
         //frame[buff_index].resize_frame = letterbox_image(frame[buff_index].frame, net.w, net.h);
         //show_image_cv(frame[buff_index].resize_frame,"im");

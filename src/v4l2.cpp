@@ -255,112 +255,7 @@ extern "C" {
         return 1;
     }
 	
- /* Capture Start*/
-    int capture_image(struct frame_data *f, int fd)
-    {
-        enum v4l2_buf_type type;
-
-        memset(&buf, 0x00, sizeof(struct v4l2_buffer));
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buf.memory = V4L2_MEMORY_MMAP;
-        if(-1 == xioctl(fd, VIDIOC_STREAMOFF, &buf.type))
-        {
-            perror("Start Capture");
-			return -1;
-        }
-        /* On demand capture */
-        if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
-        {
-            perror("Query Buffer");
-			return -1;
-        }
-
-        if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf.type))
-        {
-            perror("Start Capture");
-			return -1;
-        }
-
-	fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(fd, &fds);
-        tv.tv_sec = 2;
-        tv.tv_usec = 0;
-
-        double select_start = get_time_in_ms();
-
-        if(-1 == select(fd + 1, &fds, NULL, NULL, &tv))
-		{
-			perror("Select");
-			return -1;
-		}
-
-        f->select = get_time_in_ms() - select_start;
-
-        if(-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
-        {
-            perror("Retrieving Frame");
-			return -1;
-        }    
-        /* Load frame data */
-        f->frame_timestamp = (double)buf.timestamp.tv_sec*1000 
-            + (double)buf.timestamp.tv_usec*0.001;
-
-        f->frame_sequence = buf.sequence;
-
-        f->length = buf.length;  
-    } 
-
- /* Convert Image Format */
-    int convert_image(struct frame_data *f)
-    {
-	printf("==============convert_image");
-
-
-//    printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
-//            buf.index, buf.length, buf.flags, buf.sequence, buf.bytesused);
-
-#ifdef DEBUG
-        printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
-                buf.index, buf.length, buf.flags, buf.sequence, buf.bytesused);
-
-        printf("image capture time : %f\n", buf.timestamp.tv_sec*1000+(double)buf.timestamp.tv_usec*0.001);
-        printf("select time : %f\n", select_time);
-        printf("frame timestamp : %f\n", f->frame_timestamp);
-        printf("frame sequence : %d\n", f->frame_sequence); 
-#endif         
-        image im;
-
-#if (defined MJPEG)
-        IplImage* frame;
-
-        /* convert v4l2 raw image to Mat image */
-        CvMat cvmat = cvMat(480, 640, CV_8UC3, buffers[buf.index].start);
-        frame = cvDecodeImage(&cvmat, 1);
-
-        /* convert IplImage to darknet image type */
-        im = iplImg_to_image(frame);
-        rgbgr_image(im);
-#elif (defined YUYV)
-        cv::Mat yuyv_frame, preview;
-
-        /* convert v4l2 raw image to Mat image */
-        yuyv_frame = cv::Mat(480, 640, CV_8UC2, buffers[buf.index].start);
-
-        cv::cvtColor(yuyv_frame, preview, COLOR_YUV2BGR_YUY2);
-
-        im = matImg_to_image(preview);
-#endif
-		f->frame = im;
-
-        return 1; /* return Image as darknet image type */        
-    }
-
-
-
-
-
-//     /* Capture */
+//  /* Capture Start*/
 //     int capture_image(struct frame_data *f, int fd)
 //     {
 //         enum v4l2_buf_type type;
@@ -368,13 +263,11 @@ extern "C" {
 //         memset(&buf, 0x00, sizeof(struct v4l2_buffer));
 //         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 //         buf.memory = V4L2_MEMORY_MMAP;
-
-//         // if(-1 == xioctl(fd, VfdIDIOC_STREAMON, &buf.type))
-//         // {
-//         //     perror("Start Capture");
-// 		// 	return -1;
-//         // }
-
+//         if(-1 == xioctl(fd, VIDIOC_STREAMOFF, &buf.type))
+//         {
+//             perror("Start Capture");
+// 			return -1;
+//         }
 //         /* On demand capture */
 //         if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
 //         {
@@ -388,7 +281,7 @@ extern "C" {
 // 			return -1;
 //         }
 
-// 		fd_set fds;
+// 	fd_set fds;
 //         FD_ZERO(&fds);
 //         FD_SET(fd, &fds);
 //         tv.tv_sec = 2;
@@ -408,15 +301,21 @@ extern "C" {
 //         {
 //             perror("Retrieving Frame");
 // 			return -1;
-//         }
-
+//         }    
 //         /* Load frame data */
 //         f->frame_timestamp = (double)buf.timestamp.tv_sec*1000 
 //             + (double)buf.timestamp.tv_usec*0.001;
 
 //         f->frame_sequence = buf.sequence;
 
-//         f->length = buf.length;
+//         f->length = buf.length;  
+//     } 
+
+//  /* Convert Image Format */
+//     int convert_image(struct frame_data *f)
+//     {
+// 	printf("==============convert_image");
+
 
 // //    printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
 // //            buf.index, buf.length, buf.flags, buf.sequence, buf.bytesused);
@@ -428,8 +327,8 @@ extern "C" {
 //         printf("image capture time : %f\n", buf.timestamp.tv_sec*1000+(double)buf.timestamp.tv_usec*0.001);
 //         printf("select time : %f\n", select_time);
 //         printf("frame timestamp : %f\n", f->frame_timestamp);
-//         printf("frame sequence : %d\n", f->frame_sequence);
-// #endif
+//         printf("frame sequence : %d\n", f->frame_sequence); 
+// #endif         
 //         image im;
 
 // #if (defined MJPEG)
@@ -454,8 +353,109 @@ extern "C" {
 // #endif
 // 		f->frame = im;
 
-//         return 1; /* return Image as darknet image type */
+//         return 1; /* return Image as darknet image type */        
 //     }
+
+
+
+
+
+    /* Capture */
+    int capture_image(struct frame_data *f, int fd)
+    {
+        enum v4l2_buf_type type;
+
+        memset(&buf, 0x00, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+
+        // if(-1 == xioctl(fd, VfdIDIOC_STREAMON, &buf.type))
+        // {
+        //     perror("Start Capture");
+		// 	return -1;
+        // }
+
+        /* On demand capture */
+        if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+        {
+            perror("Query Buffer");
+			return -1;
+        }
+
+        if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf.type))
+        {
+            perror("Start Capture");
+			return -1;
+        }
+
+		fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+
+        double select_start = get_time_in_ms();
+
+        if(-1 == select(fd + 1, &fds, NULL, NULL, &tv))
+		{
+			perror("Select");
+			return -1;
+		}
+
+        f->select = get_time_in_ms() - select_start;
+
+        if(-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
+        {
+            perror("Retrieving Frame");
+			return -1;
+        }
+
+        /* Load frame data */
+        f->frame_timestamp = (double)buf.timestamp.tv_sec*1000 
+            + (double)buf.timestamp.tv_usec*0.001;
+
+        f->frame_sequence = buf.sequence;
+
+        f->length = buf.length;
+
+//    printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
+//            buf.index, buf.length, buf.flags, buf.sequence, buf.bytesused);
+
+#ifdef DEBUG
+        printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
+                buf.index, buf.length, buf.flags, buf.sequence, buf.bytesused);
+
+        printf("image capture time : %f\n", buf.timestamp.tv_sec*1000+(double)buf.timestamp.tv_usec*0.001);
+        printf("select time : %f\n", select_time);
+        printf("frame timestamp : %f\n", f->frame_timestamp);
+        printf("frame sequence : %d\n", f->frame_sequence);
+#endif
+        image im;
+
+#if (defined MJPEG)
+        IplImage* frame;
+
+        /* convert v4l2 raw image to Mat image */
+        CvMat cvmat = cvMat(480, 640, CV_8UC3, buffers[buf.index].start);
+        frame = cvDecodeImage(&cvmat, 1);
+
+        /* convert IplImage to darknet image type */
+        im = iplImg_to_image(frame);
+        rgbgr_image(im);
+#elif (defined YUYV)
+        cv::Mat yuyv_frame, preview;
+
+        /* convert v4l2 raw image to Mat image */
+        yuyv_frame = cv::Mat(480, 640, CV_8UC2, buffers[buf.index].start);
+
+        cv::cvtColor(yuyv_frame, preview, COLOR_YUV2BGR_YUY2);
+
+        im = matImg_to_image(preview);
+#endif
+		f->frame = im;
+
+        return 1; /* return Image as darknet image type */
+    }
 
     /* Check Q size defined in environment variable */
     int get_v4l2_Q_size()
