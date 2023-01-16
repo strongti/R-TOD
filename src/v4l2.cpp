@@ -263,12 +263,9 @@ extern "C" {
         memset(&buf, 0x00, sizeof(struct v4l2_buffer));
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
-        if(-1 == xioctl(fd, VIDIOC_STREAMOFF, &buf.type))
-        {
-            perror("Start Capture");
-			return -1;
-        }
+
         /* On demand capture */
+
         if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
         {
             perror("Query Buffer");
@@ -281,7 +278,7 @@ extern "C" {
 			return -1;
         }
 
-	fd_set fds;
+	    fd_set fds;
         FD_ZERO(&fds);
         FD_SET(fd, &fds);
         tv.tv_sec = 2;
@@ -289,7 +286,7 @@ extern "C" {
 
         double select_start = get_time_in_ms();
 
-        if(-1 == select(fd + 1, &fds, NULL, NULL, &tv))
+        if(-1 == select(fd +1, &fds, NULL, NULL, &tv))
 		{
 			perror("Select");
 			return -1;
@@ -308,13 +305,15 @@ extern "C" {
 
         f->frame_sequence = buf.sequence;
 
-        f->length = buf.length;  
+        f->length = buf.length;
+
+
     } 
 
  /* Convert Image Format */
     int convert_image(struct frame_data *f)
     {
-	printf("==============convert_image");
+	//printf("==============convert_image");
 
 
 //    printf("got data in buff %d, len=%d, flags=0x%X, seq=%d, used=%d)\n",
@@ -329,8 +328,8 @@ extern "C" {
         printf("frame timestamp : %f\n", f->frame_timestamp);
         printf("frame sequence : %d\n", f->frame_sequence); 
 #endif         
-        image im;
 
+        image im;
 #if (defined MJPEG)
         IplImage* frame;
 
@@ -343,7 +342,7 @@ extern "C" {
         rgbgr_image(im);
 #elif (defined YUYV)
         cv::Mat yuyv_frame, preview;
-
+	
         /* convert v4l2 raw image to Mat image */
         yuyv_frame = cv::Mat(480, 640, CV_8UC2, buffers[buf.index].start);
 
@@ -352,8 +351,8 @@ extern "C" {
         im = matImg_to_image(preview);
 #endif
 		f->frame = im;
-
-        return 1; /* return Image as darknet image type */        
+        return 1; /* return Image as darknet image type */  
+              
     }
 
 

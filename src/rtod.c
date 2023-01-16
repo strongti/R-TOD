@@ -279,23 +279,21 @@ int check_on_demand(void)
     return on_demand;
 }
 
-struct frame_data *f;
 void *rtod_capture_thread(void *ptr)
 {
-    while(1)
-    {
+
 #ifdef V4L2
-	//if(-1 == capture_image(&f, *fd_handler))
-	if(-1 == capture_image(&frame[buff_index], *fd_handler))
-	
-	{
-		perror("Fail to capture image");
-		exit(0);
+	while(1) 
+	{   
+        int ret;
+		//if(-1 == capture_image(&fr, *fd_handler))
+		// if(-1 == capture_image(&frame[buff_index], *fd_handler))	
+        capture_image(&frame[buff_index], *fd_handler);
+        sleep(32); 
+		
 	}
 	//usleep(33.333*1000);
-	//printf("capture image =============");
-	sleep(50);
-    }
+    
 #endif
 
 }
@@ -311,12 +309,14 @@ void *rtod_fetch_thread(void *ptr)
         in_s = get_image_from_stream_letterbox(cap, net.w, net.h, net.c, &in_img, dont_close_stream);
     else{
 #ifdef V4L2
-	//frame[buff_index] = *f;
+
+	// memcpy(frame+buff_index, &fr, sizeof(struct frame_data));
 	if(-1 == convert_image(&frame[buff_index]))
 	{
 		perror("Fail to convert image");
 		exit(0);
 	}
+
         letterbox_image_into(frame[buff_index].frame, net.w, net.h, frame[buff_index].resize_frame);
         //frame[buff_index].resize_frame = letterbox_image(frame[buff_index].frame, net.w, net.h);
         //show_image_cv(frame[buff_index].resize_frame,"im");
@@ -340,7 +340,9 @@ void *rtod_fetch_thread(void *ptr)
     }
     end_fetch = get_time_in_ms();
 
-    image_waiting_time = frame[buff_index].frame_timestamp - start_fetch;
+    // image_waiting_time = frame[buff_index].frame_timestamp - start_fetch;
+    // image_waiting_time -= fetch_offset;
+    image_waiting_time = start_fetch - frame[buff_index].frame_timestamp;
     image_waiting_time -= fetch_offset;
 
     if(ondemand) transfer_delay = frame[buff_index].select - image_waiting_time;
@@ -575,6 +577,8 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
         //'W', 'M', 'V', '2'
     }
 
+    /* Fork Capture thread */
+
     int send_http_post_once = 0;
     const double start_time_lim = get_time_point();
     double before = get_time_point();
@@ -600,12 +604,14 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             const float nms = .45;    // 0.4F
             int local_nboxes = nboxes;
             detection *local_dets = dets;
-            /* Fork Capture thread */
-    	    if(pthread_create(&capture_thread, 0, rtod_capture_thread, 0)) error("Thread creation failed");
-
+       
+            /* Fork fetch thread */
+            
+       
+            if (!benchmark) if (pthread_create(&capture_thread, 0, rtod_capture_thread, 0)) error("Thread creation failed");
             /* Fork fetch thread */
             if (!benchmark) if (pthread_create(&fetch_thread, 0, rtod_fetch_thread, 0)) error("Thread creation failed");
-
+           
 #ifdef ZERO_SLACK
             /* Fork Inference thread */
             if(pthread_create(&inference_thread, 0, rtod_inference_thread, 0)) error("Thread creation failed");
@@ -634,7 +640,9 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             draw_bbox_time = get_time_in_ms() - start_disp;
 
             /* Image display */
+            
             rtod_display_thread(0);
+            
 #else
             /* original display thread */
 
@@ -713,6 +721,7 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 #endif
             /* Join fetch thread */
             if (!benchmark) {
+		//pthread_join(capture_thread,0);
                 pthread_join(fetch_thread, 0);
                 free_image(det_s);
             }
@@ -721,8 +730,8 @@ void rtod(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             /* Change infer image for next object detection cycle*/
             det_img = in_img;
             det_s = in_s;
-
             rtod_inference_thread(0);
+           
 #endif
 
             if (time_limit_sec > 0 && (get_time_point() - start_time_lim)/1000000 > time_limit_sec) {

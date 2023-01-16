@@ -35,6 +35,7 @@ extern "C" {
 #endif
 
 struct frame_data frame[3]; // v4l2 image data
+struct frame_data fr;
 
 double e_fetch_array[OBJ_DET_CYCLE_IDX];
 double b_fetch_array[OBJ_DET_CYCLE_IDX];
